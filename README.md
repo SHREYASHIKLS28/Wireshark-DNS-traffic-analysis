@@ -1,5 +1,5 @@
 
-#  Case 1 – DNS Traffic Analysis Using Wireshark
+# DNS Traffic Analysis Using Wireshark
 
 ##  Overview
 

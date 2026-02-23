@@ -1,198 +1,293 @@
-# DNS Traffic Analysis Using Wireshark
 
-## Project Type
-**Network Traffic Investigation – Blue Team / SOC-Focused Analysis**
+#  Case 1 – DNS Traffic Analysis Using Wireshark
 
----
+##  Overview
 
-## Overview
-
-This project presents a structured DNS traffic investigation conducted using Wireshark. The objective was to analyze a captured packet file and identify potential malicious behavior including:
-
-- DNS tunneling  
-- Domain Generation Algorithm (DGA) activity  
-- Beaconing communication  
-- Abnormal DNS failures  
-- Data exfiltration patterns  
-
-The investigation follows a layered methodology similar to SOC Tier-1 analysis workflows.
+This case study analyzes DNS traffic from a captured network packet file using Wireshark.
+The objective was to detect potential malicious indicators such as DNS tunneling, DGA activity, beaconing behavior, and abnormal DNS resolution patterns.
 
 ---
 
-## Capture Details
+##  File Details
 
-- **PCAP File:** `Case1_Baseline_Web_Traffic.pcapng`
-- **Total Packets:** 53,944
-- **Tool Used:** Wireshark
-- **Capture Interface:** Wi-Fi
-- **Client IP:** 172.17.84.79
-- **DNS Server:** 172.17.80.1
-
----
-
-## Investigation Objectives
-
-The analysis aimed to detect:
-
-- DNS tunneling via long encoded subdomains  
-- DGA-generated random domain patterns  
-- High NXDOMAIN or SERVFAIL error rates  
-- Beaconing or fixed-interval DNS communication  
-- Rogue DNS server usage  
-- DNS-based data exfiltration  
+* **PCAP File:** `Case1_Baseline_Web_Traffic.pcapng`
+* **Tool Used:** Wireshark (v4.x)
+* **Interface Captured:** Wi-Fi
+* **Total Packets Captured:** 53,944
+* **Client IP:** 172.17.84.79
+* **DNS Server:** 172.17.80.1
 
 ---
 
-# Investigation Methodology
+#  Investigation Objectives
+
+The analysis focused on identifying:
+
+* DNS tunneling
+* Domain Generation Algorithm (DGA) activity
+* Beaconing behavior
+* Excessive NXDOMAIN responses
+* Rogue DNS usage
+* Data exfiltration via DNS
+* Abnormal traffic patterns
 
 ---
 
-## 1. DNS Traffic Isolation
-
-**Filter used:** dns
-
-**Purpose:**  
-Isolate all DNS traffic for inspection.
-
-**Findings:**
-
-- All queries directed to internal DNS resolver (172.17.80.1)
-- Destination port consistently 53
-- Domains associated with known vendors (Google, Microsoft, advertising infrastructure)
-- No rogue DNS server usage detected
+#  Investigation Phases
 
 ---
 
-## 2. Removal of Multicast Noise
+##  Phase 1 – DNS Traffic Isolation
 
-**Filter used:** dns && !(mdns)
+### Filter Used
 
-**Purpose:**  
-Remove local multicast DNS traffic to eliminate false positives.
+```wireshark
+dns
+```
 
-**Findings:**
+### Malicious Indicators Checked
 
-- Only standard DNS traffic remained
-- No abnormal broadcast amplification detected
+* Excessive DNS query volume
+* Queries to unauthorized DNS servers
+* Non-standard DNS ports
+* Suspicious top-level domains (.xyz, .top, etc.)
 
----
+### Observations
 
-## 3. Long Domain Name Analysis (Tunneling Detection)
+* All DNS traffic directed to internal resolver `172.17.80.1`
+* Destination port consistently `53`
+* Domains observed:
 
-**Filter used:** dns.qry.name.len > 40
+  * Google services
+  * Microsoft services
+  * Advertising/analytics domains
 
-**Purpose:**  
-Detect potential DNS tunneling through long or encoded subdomains.
+### Conclusion
 
-**Findings:**
-
-- Long domains observed were structured and vendor-associated
-- No base64-like or high-entropy subdomains
-- No repeated encoded patterns
-- No evidence of DNS tunneling
-
----
-
-## 4. DNS Error Code Analysis (DGA Detection)
-
-**Filter used:** dns.flags.rcode != 0
-
-**Purpose:**  
-Identify abnormal NXDOMAIN or SERVFAIL patterns.
-
-**Findings:**
-
-- Limited NXDOMAIN responses
-- Limited SERVFAIL responses
-- Errors associated with advertising/tracking domains
-- No repeated random domain failures
-- No DGA behavior detected
+DNS flow followed expected client → internal DNS server pattern.
+No rogue resolver or abnormal DNS behavior detected.
 
 ---
 
-## 5. UDP Conversation Analysis
+##  Phase 2 – Removal of Multicast Noise (MDNS Filtering)
 
-**Tool used:**  
+### Filter Used
+
+```wireshark
+dns && !(mdns)
+```
+
+### Purpose
+
+To remove multicast DNS traffic such as:
+
+* Apple AirPlay
+* Printer discovery
+* Local device broadcasts
+
+### Why This Matters
+
+Multicast DNS can generate false positives and obscure meaningful DNS analysis.
+
+### Observations
+
+* Only standard DNS (port 53) traffic remained.
+* No abnormal broadcast amplification detected.
+
+### Conclusion
+
+Noise successfully removed. Clean dataset prepared for deeper analysis.
+
+---
+
+##  Phase 3 – Long Domain Name Analysis (DNS Tunneling Detection)
+
+### Filter Used
+
+```wireshark
+dns && !(mdns) && dns.qry.name.len > 40
+```
+
+### Malicious Indicators Checked
+
+* Long, high-entropy subdomains
+* Base64-like encoded strings
+* Repeated long DNS queries
+* Structured random character sequences
+
+### Observations
+
+Examples of long domains observed:
+
+* `prod.tahoe-analytics.publishers.advertising.a2z.com`
+* `safeframe.googlesyndication.com`
+
+Characteristics:
+
+* Structured subdomains
+* Recognizable vendor infrastructure
+* No high-entropy randomness
+* No encoded payload segments
+* No repeated pattern
+
+### What DNS Tunneling Typically Looks Like
+
+```
+ajsdhaskjdhaskjdhaskjdh.maliciousdomain.com
+```
+
+or
+
+```
+ZXhhbXBsZWRhdGE=.evil.com
+```
+
+### Conclusion
+
+No evidence of DNS tunneling or encoded data exfiltration observed.
+
+---
+
+##  Phase 4 – DNS Error Code Analysis (DGA Detection)
+
+### Filter Used
+
+```wireshark
+dns.flags.rcode != 0
+```
+
+### Malicious Indicators Checked
+
+* High NXDOMAIN frequency
+* Continuous SERVFAIL responses
+* Repeated failed queries to random domains
+* Retry loops for same domain
+
+### Observations
+
+* Limited NXDOMAIN responses
+* Limited SERVFAIL responses
+* Failures linked to advertising/tracking domains
+* No repeated high-frequency failure pattern
+
+### Why This Matters
+
+DGA malware produces:
+
+* Large volumes of random domain queries
+* High NXDOMAIN rates
+* Repeated failed resolution attempts
+
+This pattern was not observed.
+
+### Conclusion
+
+DNS error rate consistent with normal web browsing behavior.
+
+---
+
+##  Phase 5 – UDP Conversation Analysis
+
+**Tool Used:**
 Statistics → Conversations → UDP
 
-**Findings:**
+### Malicious Indicators Checked
 
-- Each DNS conversation consisted of one query and one response
-- No excessive packet counts
-- No retry bursts
-- No large payload anomalies
-- No beaconing or tunneling pattern detected
+* High packet count per DNS conversation
+* Repeated queries without responses
+* Large DNS payload sizes
+* Multiple retries per request
 
----
+### Observations
 
-## 6. Time-Based Traffic Analysis
+* Each DNS conversation contained:
 
-**Tool used:**  
-Statistics → I/O Graph (1-second interval)
+  * 1 query
+  * 1 response
+* Total packets per conversation: 2
+* No abnormal payload size
+* No retry burst behavior
 
-**Findings:**
+### What Beaconing Looks Like
 
-- Traffic spikes correlated with manual browsing
-- No fixed-interval periodic communication
-- DNS activity reduced during idle periods
-- Minimal TCP retransmissions
-- No persistent C2-style communication observed
+```
+Query → No response → Retry → Retry → Retry
+```
 
----
+### Conclusion
 
-# Indicators of Compromise (IOC) Review
-
-The following indicators were evaluated:
-
-- High-entropy subdomains  
-- Excessive NXDOMAIN responses  
-- Repeated DNS retries  
-- Periodic DNS spikes  
-- Rogue DNS server usage  
-- Large DNS payload anomalies  
-
-**Result:**  
-None were detected.
+All DNS conversations followed normal resolution behavior.
 
 ---
 
-# Final Assessment
+##  Phase 6 – Time-Based Traffic Analysis
 
-The analyzed packet capture represents normal baseline web browsing and background system activity.
+**Tool Used:**
+Statistics → I/O Graph
+Interval: 1 second
 
-No evidence of:
+### Malicious Indicators Checked
 
-- DNS tunneling  
-- DGA-based malware  
-- Command-and-Control communication  
-- DNS-based data exfiltration  
-- Beaconing behavior  
+* Fixed-interval traffic spikes
+* Sustained outbound traffic
+* Continuous DNS traffic independent of user activity
+* High retransmission rates
 
-The investigation confirms legitimate DNS resolution behavior consistent with standard browsing patterns.
+### Observations
 
----
+* Traffic spikes aligned with browsing activity
+* No evenly spaced periodic spikes
+* DNS traffic reduced during idle periods
+* Minimal TCP retransmissions
 
-# Artifacts Included
+### What Malware Beaconing Looks Like
 
-- Screenshots of each analysis phase  
-- `filters-used.txt` (complete filtering methodology)  
-- Executive summary (PDF format)  
+Regular spikes every 5–10 seconds regardless of user behavior.
 
----
+### Conclusion
 
-# Skills Demonstrated
-
-- Protocol-level traffic isolation  
-- DNS tunneling detection methodology  
-- DGA detection logic  
-- Error code analysis  
-- Conversation-level inspection  
-- Time-based behavioral analysis  
-- False-positive elimination  
+Traffic pattern consistent with manual user-driven browsing.
 
 ---
 
-## Author
+#  Consolidated Malicious Indicator Review
 
-Blue Team DNS Investigation Project  
-SOC-Focused Network Traffic Analysis  
+| Indicator                      | Detected | Verdict      |
+| ------------------------------ | -------- | ------------ |
+| DNS tunneling                  | ❌        | Not observed |
+| DGA domains                    | ❌        | Not observed |
+| Excessive NXDOMAIN             | ❌        | Not observed |
+| Periodic beaconing             | ❌        | Not observed |
+| Rogue DNS resolver             | ❌        | Not observed |
+| Abnormal DNS payload size      | ❌        | Not observed |
+| Sustained exfiltration pattern | ❌        | Not observed |
+
+---
+
+#  Final Verdict
+
+The analyzed PCAP file represents baseline web browsing and normal background system activity.
+
+There is no evidence of:
+
+* DNS-based data exfiltration
+* Command-and-Control (C2) communication
+* Domain Generation Algorithm (DGA) activity
+* DNS tunneling
+* Beaconing behavior
+
+Traffic behavior, resolution patterns, conversation statistics, and time-based analysis all align with expected legitimate activity.
+
+---
+
+#  Skills Demonstrated
+
+* Protocol isolation and filtering
+* Noise elimination (MDNS removal)
+* DNS tunneling detection methodology
+* DGA detection logic
+* DNS error analysis
+* Conversation-level inspection
+* Time-based behavioral analysis
+* False-positive elimination
+
